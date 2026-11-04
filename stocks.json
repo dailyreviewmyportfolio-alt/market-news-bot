@@ -1,0 +1,17 @@
+[
+  {"symbol": "BAJFINANCE", "keywords": ["Bajaj Finance"]},
+  {"symbol": "CDSL",       "keywords": ["CDSL", "Central Depository"]},
+  {"symbol": "DEEPAKNTR",  "keywords": ["Deepak Nitrite"]},
+  {"symbol": "GVT&D",      "keywords": ["GE Vernova T&D", "GE Vernova"]},
+  {"symbol": "LTM",        "keywords": ["LTIMindtree", "LTM"]},
+  {"symbol": "MAZDOCK",    "keywords": ["Mazagon Dock", "Mazagon"]},
+  {"symbol": "MCX",        "keywords": ["MCX", "Multi Commodity Exchange"]},
+  {"symbol": "PERSISTENT", "keywords": ["Persistent Systems"]},
+  {"symbol": "PGEL",       "keywords": ["PG Electroplast", "PGEL"]},
+  {"symbol": "POLYCAB",    "keywords": ["Polycab"]},
+  {"symbol": "POLYMED",    "keywords": ["Poly Medicure"]},
+  {"symbol": "SOLARINDS",  "keywords": ["Solar Industries"]},
+  {"symbol": "SONACOMS",   "keywords": ["Sona BLW", "Sona Comstar", "Sona Precision"]},
+  {"symbol": "VBL",        "keywords": ["Varun Beverages", "VBL"]},
+  {"symbol": "WAAREERTL",  "keywords": ["Waaree Renewable"]}
+]
