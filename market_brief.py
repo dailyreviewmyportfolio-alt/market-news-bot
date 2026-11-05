@@ -33,7 +33,10 @@ UA = {"User-Agent": "Mozilla/5.0 (MorningMarketBrief)"}
 BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
               "(KHTML, like Gecko) Chrome/120.0 Safari/537.36")
 CHANNEL = "@DailyReviewMyPortfolio"
-STORY_PATH = f"stories/brief-{TODAY:%Y-%m-%d}.jpg"
+# date-first names: the workflow keeps the newest 7 files in stories/ by name
+STORY_PATH = f"stories/{TODAY:%Y-%m-%d}-story.jpg"   # 1080x1920 Instagram story
+POST_PATH = f"stories/{TODAY:%Y-%m-%d}-post.jpg"     # 1080x1350 Instagram feed post
+HASHTAGS = "#StockMarket #Nifty #Sensex #FIIDII #KannadaStockMarket"  # max 5
 IG_API = "https://graph.instagram.com/v27.0"
 # quote/listing pages that are not real news
 JUNK = re.compile(r"share price( today|, stock price| live|$)|stock price today", re.I)
@@ -184,6 +187,13 @@ def render_community(d):
     return "\n".join(L)
 
 
+def render_caption(d):
+    """Instagram feed post caption (same summary, 5 hashtags, channel link)."""
+    body = render_community(d).rsplit("\n", 1)[0]  # drop the YouTube hashtag line
+    return (body + "\n\n📺 Daily portfolio review on YouTube: " + CHANNEL
+            + "\n\n" + HASHTAGS)[:2100]
+
+
 # ---------------------------------------------------------------- story image
 FONTS = {
     "bold": ["/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -196,7 +206,8 @@ CARD, MUTED, WHITE = (30, 41, 59), (148, 163, 184), (241, 245, 249)
 GREEN, RED, ACCENT = (34, 197, 94), (239, 68, 68), (250, 204, 21)
 
 
-def render_story(d, path):
+def render_story(d, path, post=False):
+    """Story (1080x1920, with news) or feed post (1080x1350, numbers only)."""
     from PIL import Image, ImageDraw, ImageFont
 
     def font(kind, size):
@@ -205,7 +216,8 @@ def render_story(d, path):
                 return ImageFont.truetype(p, size)
         return ImageFont.load_default(size)
 
-    W, H, M = 1080, 1920, 70
+    W, H, M = (1080, 1350, 70) if post else (1080, 1920, 70)
+    RH = 64 if post else 58  # row height
     img = Image.new("RGB", (W, H))
     dr = ImageDraw.Draw(img)
     for y in range(H):  # vertical gradient
@@ -216,7 +228,7 @@ def render_story(d, path):
     f_head, f_row, f_val = font("bold", 34), font("regular", 38), font("bold", 38)
     f_news, f_foot = font("regular", 33), font("bold", 34)
 
-    y = 230
+    y = 70 if post else 230  # stories keep clear of the top UI
     dr.rectangle([M, y, M + 120, y + 10], fill=ACCENT)
     y += 30
     dr.text((M, y), "MORNING MARKET BRIEF", font=f_title, fill=WHITE)
@@ -236,33 +248,33 @@ def render_story(d, path):
         dr.text((x_right - dr.textlength(text, font=fnt), yy), text, font=fnt, fill=fill)
 
     # India
-    ry = card("INDIA  (last close)", 3 * 58)
+    ry = card("INDIA  (last close)", 3 * RH)
     for label, q in d["india"]:
         dr.text((M + 10, ry), label, font=f_row, fill=WHITE)
         if q:
             right(f"{q[0]:,.0f}   {q[1]:+.2f}%", W - M - 10, ry, f_val, GREEN if q[1] >= 0 else RED)
-        ry += 58
+        ry += RH
 
     # FII / DII
     if d["fii"]:
         f = d["fii"]
-        ry = card(f"FII / DII CASH  ({f['date']})", 2 * 58)
+        ry = card(f"FII / DII CASH  ({f['date']})", 2 * RH)
         for k in ("FII", "DII"):
             v = f[k]
             dr.text((M + 10, ry), k, font=f_row, fill=WHITE)
             right(("+" if v >= 0 else "-") + f"Rs {abs(v):,.0f} Cr", W - M - 10, ry, f_val,
                   GREEN if v >= 0 else RED)
-            ry += 58
+            ry += RH
 
     # Global, two columns
     items = [(a, q, None) for a, q in d["world"]]
     items += [(a, q, f"{q[0]:,.1f}" if q else None) for a, q in d["others"]]
     rows = (len(items) + 1) // 2
-    ry = card("GLOBAL  &  COMMODITIES", rows * 58)
+    ry = card("GLOBAL  &  COMMODITIES", rows * RH)
     colw = (W - 2 * M) // 2
     for i, (label, q, val) in enumerate(items):
         x = M + 10 + (i % 2) * colw
-        yy = ry + (i // 2) * 58
+        yy = ry + (i // 2) * RH
         dr.text((x, yy), label, font=f_row, fill=MUTED)
         if q:
             txt = f"{val}  {q[1]:+.1f}%" if val else f"{q[1]:+.2f}%"
@@ -270,7 +282,7 @@ def render_story(d, path):
 
     # Top news
     news = (d["india_news"][:2] + d["global_news"][:1]) or d["watch"][:3]
-    if news:
+    if news and not post:  # feed post: news goes in the caption instead
         wrapped = []
         for h, _ in news[:3]:
             lines = textwrap.wrap(h, 52)[:2]
@@ -286,7 +298,7 @@ def render_story(d, path):
             ry += 18
 
     # Footer
-    y = max(y, 1650)
+    y = max(y, H - 140 if post else 1650)
     dr.text((M, y), CHANNEL, font=f_foot, fill=WHITE)
     dr.text((M, y + 48), "Not investment advice. For education only.", font=f_news, fill=MUTED)
 
@@ -435,7 +447,6 @@ def publish_instagram():
         return None
     repo = os.environ.get("GITHUB_REPOSITORY", "")
     branch = os.environ.get("GITHUB_REF_NAME", "main")
-    image_url = f"https://raw.githubusercontent.com/{repo}/{branch}/{STORY_PATH}"
     fb_ig_id = (os.environ.get("IG_USER_ID") or "").strip()
     # Facebook-login setup (Page token + IG_USER_ID) uses graph.facebook.com
     api = "https://graph.facebook.com/v27.0" if fb_ig_id else IG_API
@@ -457,15 +468,21 @@ def publish_instagram():
             ig_id = me["user_id"]
             print(f"instagram account: @{me.get('username')}")
 
+    except Exception as e:
+        print("instagram account check FAILED:", e)
+        if tg_creds()[0]:
+            tg_text(f"⚠️ Instagram story and post were NOT published: {e}", html_mode=False)
+        return False
+
+    def publish(path, extra):
+        url = f"https://raw.githubusercontent.com/{repo}/{branch}/{path}"
         for _ in range(12):  # wait until GitHub serves the freshly pushed image
             try:
-                fetch(image_url, timeout=20)
+                fetch(url, timeout=20)
                 break
             except Exception:
                 time.sleep(5)
-
-        container = ig_call(f"{ig_id}/media", {"image_url": image_url, "media_type": "STORIES",
-                                               "access_token": token}, api=api)["id"]
+        container = ig_call(f"{ig_id}/media", dict(extra, image_url=url, access_token=token), api=api)["id"]
         for _ in range(10):
             st = ig_call(container, {"fields": "status_code", "access_token": token}, post=False, api=api)
             if st.get("status_code") in ("FINISHED", None):
@@ -473,17 +490,30 @@ def publish_instagram():
             if st.get("status_code") in ("ERROR", "EXPIRED"):
                 raise RuntimeError(f"container status {st.get('status_code')}")
             time.sleep(6)
-        media = ig_call(f"{ig_id}/media_publish", {"creation_id": container, "access_token": token}, api=api)
-        print("instagram story published:", media.get("id"))
-        if tg_creds()[0]:
-            tg_text("✅ Instagram story posted automatically.", html_mode=False)
-        return True
-    except Exception as e:
-        print("instagram FAILED:", e)
-        if tg_creds()[0]:
-            tg_text(f"⚠️ Instagram story was NOT posted: {e}\nPlease post today's story image manually.",
-                    html_mode=False)
-        return False
+        return ig_call(f"{ig_id}/media_publish", {"creation_id": container, "access_token": token},
+                       api=api).get("id")
+
+    caption_file = os.path.join(HERE, "caption.txt")
+    caption = open(caption_file, encoding="utf-8").read() if os.path.exists(caption_file) else ""
+    jobs = [("story", STORY_PATH, {"media_type": "STORIES"}),
+            ("post", POST_PATH, {"caption": caption})]
+    report, ok = [], True
+    for name, path, extra in jobs:
+        if not os.path.exists(os.path.join(HERE, path)):
+            report.append(f"⚠️ Instagram {name}: image missing, skipped")
+            ok = False
+            continue
+        try:
+            media_id = publish(path, extra)
+            print(f"instagram {name} published:", media_id)
+            report.append(f"✅ Instagram {name} posted automatically.")
+        except Exception as e:
+            print(f"instagram {name} FAILED:", e)
+            report.append(f"⚠️ Instagram {name} NOT posted: {e}\nPlease post it manually.")
+            ok = False
+    if tg_creds()[0]:
+        tg_text("\n".join(report), html_mode=False)
+    return ok
 
 
 # ---------------------------------------------------------------- main
@@ -496,13 +526,20 @@ if __name__ == "__main__":
 
     data = gather()
     brief, community = render_brief(data), render_community(data)
+    caption = render_caption(data)
+    with open(os.path.join(HERE, "caption.txt"), "w", encoding="utf-8") as fh:
+        fh.write(caption)  # read by the --publish-ig step (not committed)
+    for old in os.listdir(os.path.join(HERE, "stories")) if os.path.isdir(os.path.join(HERE, "stories")) else []:
+        if old.startswith("brief-"):  # old naming scheme
+            os.remove(os.path.join(HERE, "stories", old))
     story = None
     try:
         story = render_story(data, STORY_PATH)
         print("story image saved:", story)
+        print("post image saved:", render_story(data, POST_PATH, post=True))
     except Exception as e:
-        print("story image FAILED:", e)
-    print(brief, "\n\n----- community post -----\n" + community)
+        print("image FAILED:", e)
+    print(brief, "\n\n----- community post -----\n" + community, "\n\n----- instagram caption -----\n" + caption)
 
     if "--dry-run" not in sys.argv:
         results = [r for r in (send_telegram(brief, community, story), send_whatsapp(brief))
