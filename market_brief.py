@@ -412,9 +412,9 @@ def send_whatsapp(text):
 
 
 # ---------------------------------------------------------------- instagram
-def ig_call(path, params, post=True):
+def ig_call(path, params, post=True, api=IG_API):
     data = urllib.parse.urlencode(params).encode() if post else None
-    url = f"{IG_API}/{path}" if post else f"{IG_API}/{path}?{urllib.parse.urlencode(params)}"
+    url = f"{api}/{path}" if post else f"{api}/{path}?{urllib.parse.urlencode(params)}"
     try:
         return json.loads(fetch(url, timeout=60, data=data))
     except Exception as e:
@@ -436,21 +436,26 @@ def publish_instagram():
     repo = os.environ.get("GITHUB_REPOSITORY", "")
     branch = os.environ.get("GITHUB_REF_NAME", "main")
     image_url = f"https://raw.githubusercontent.com/{repo}/{branch}/{STORY_PATH}"
+    fb_ig_id = (os.environ.get("IG_USER_ID") or "").strip()
+    # Facebook-login setup (Page token + IG_USER_ID) uses graph.facebook.com
+    api = "https://graph.facebook.com/v27.0" if fb_ig_id else IG_API
     try:
-        # keep the 60-day token alive (works once it is 24h+ old; failures are harmless)
-        try:
-            r = json.loads(fetch("https://graph.instagram.com/refresh_access_token?" + urllib.parse.urlencode(
-                {"grant_type": "ig_refresh_token", "access_token": token})))
-            days = int(r.get("expires_in", 0)) // 86400
-            same = r.get("access_token") == token
-            print(f"instagram token refreshed: valid ~{days} more days (same token: {same})")
-        except Exception as e:
-            print("instagram token refresh skipped:", e)
-
-        me = ig_call("me", {"fields": "user_id,username", "access_token": token}, post=False)
-        me = (me.get("data") or [me])[0]
-        ig_id = me["user_id"]
-        print(f"instagram account: @{me.get('username')}")
+        if fb_ig_id:
+            ig_id = fb_ig_id
+            print(f"instagram account id ...{ig_id[-4:]} (Facebook login, page token)")
+        else:
+            # keep the 60-day Instagram-login token alive (failures are harmless)
+            try:
+                r = json.loads(fetch("https://graph.instagram.com/refresh_access_token?"
+                                     + urllib.parse.urlencode({"grant_type": "ig_refresh_token",
+                                                               "access_token": token})))
+                print(f"instagram token refreshed: valid ~{int(r.get('expires_in', 0)) // 86400} more days")
+            except Exception as e:
+                print("instagram token refresh skipped:", e)
+            me = ig_call("me", {"fields": "user_id,username", "access_token": token}, post=False)
+            me = (me.get("data") or [me])[0]
+            ig_id = me["user_id"]
+            print(f"instagram account: @{me.get('username')}")
 
         for _ in range(12):  # wait until GitHub serves the freshly pushed image
             try:
@@ -460,15 +465,15 @@ def publish_instagram():
                 time.sleep(5)
 
         container = ig_call(f"{ig_id}/media", {"image_url": image_url, "media_type": "STORIES",
-                                               "access_token": token})["id"]
+                                               "access_token": token}, api=api)["id"]
         for _ in range(10):
-            st = ig_call(container, {"fields": "status_code", "access_token": token}, post=False)
+            st = ig_call(container, {"fields": "status_code", "access_token": token}, post=False, api=api)
             if st.get("status_code") in ("FINISHED", None):
                 break
             if st.get("status_code") in ("ERROR", "EXPIRED"):
                 raise RuntimeError(f"container status {st.get('status_code')}")
             time.sleep(6)
-        media = ig_call(f"{ig_id}/media_publish", {"creation_id": container, "access_token": token})
+        media = ig_call(f"{ig_id}/media_publish", {"creation_id": container, "access_token": token}, api=api)
         print("instagram story published:", media.get("id"))
         if tg_creds()[0]:
             tg_text("✅ Instagram story posted automatically.", html_mode=False)
