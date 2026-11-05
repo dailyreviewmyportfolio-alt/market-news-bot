@@ -175,6 +175,12 @@ def send_telegram(text):
     chat = os.environ.get("TELEGRAM_CHAT_ID")
     if not token or not chat:
         return None  # not configured
+    token, chat = token.strip(), chat.strip()
+    try:  # show which bot/chat is used (safe: no secret values)
+        me = json.loads(fetch(f"https://api.telegram.org/bot{token}/getMe"))["result"]
+        print(f"telegram: bot @{me['username']}, chat id ends with ...{chat[-3:]} ({len(chat)} digits)")
+    except Exception as e:
+        print(f"telegram: token check failed: {e}")
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     ok = True
     for i, chunk in enumerate(split_chunks(text, 3800)):
@@ -191,7 +197,15 @@ def send_telegram(text):
                 print(f"telegram part {i + 1}: sent")
                 break
             except Exception as e:
-                print(f"telegram part {i + 1} ({parse_mode or 'plain'}): FAILED {e}")
+                detail = ""
+                if hasattr(e, "read"):  # Telegram explains the error in the body
+                    try:
+                        detail = json.loads(e.read()).get("description", "")
+                    except Exception:
+                        pass
+                print(f"telegram part {i + 1} ({parse_mode or 'plain'}): FAILED {e} {detail}")
+                if getattr(e, "code", None) in (401, 403, 404):
+                    return False  # token/chat problem: retrying won't help
         else:
             ok = False
     return ok
