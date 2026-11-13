@@ -2,14 +2,16 @@ name: Evening Reel Upload
 
 on:
   schedule:
-    # Mon-Fri. 12:45 and 13:10 UTC = 6:15 and 6:40 PM IST. GitHub often starts scheduled jobs late,
-    # so the script itself waits until exactly 7:00 PM IST before posting (two runs = a backup).
-    - cron: "45 12 * * 1-5"
-    - cron: "10 13 * * 1-5"
+    # Mon-Fri. 11:00 and 11:45 UTC = 4:30 and 5:15 PM IST. GitHub starts scheduled jobs late
+    # (over an hour on 12 Nov 2026), so they are scheduled early and the script itself waits
+    # until exactly 7:00 PM IST before posting. The second run is only a backup.
+    - cron: "0 11 * * 1-5"
+    - cron: "45 11 * * 1-5"
   workflow_dispatch: {}   # "Run workflow" button: posts right away (for a test)
 
 permissions:
   contents: write   # only used by the fallback that briefly puts the video in the repo
+  actions: read     # to see whether an earlier run already finished today
 
 concurrency:
   group: reel-upload    # the second run waits for the first, so the video is never posted twice
@@ -18,20 +20,36 @@ concurrency:
 jobs:
   reel:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 200   # a run that starts on time waits about 2.5 hours for 7:00 PM
     env:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
       IG_USER_ID: ${{ secrets.IG_USER_ID }}
     steps:
+      - name: Did an earlier run already finish today?
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          N=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow reel-upload.yml --status success \
+              --created "$(date -u +%F)" --json databaseId --jq length || echo 0)
+          echo "successful runs today: $N"
+          if [ "${N:-0}" -gt 0 ]; then
+            echo "The first run already handled today - skipping."
+            echo "SKIP=1" >> "$GITHUB_ENV"
+          fi
+
       - uses: actions/checkout@v4
+        if: env.SKIP != '1'
         with:
           ref: main
 
       - uses: actions/setup-python@v5
+        if: env.SKIP != '1'
         with:
           python-version: "3.12"
 
       - name: Wait for 7:00 PM IST, then post the Reel
+        if: env.SKIP != '1'
         run: python reel_upload.py ${{ github.event_name == 'schedule' && '--wait' || '--now' }}
