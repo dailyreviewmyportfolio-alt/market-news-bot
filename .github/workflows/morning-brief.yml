@@ -7,7 +7,13 @@ on:
     - cron: "50 2 * * *"
     - cron: "5 3 * * *"
     - cron: "20 3 * * *"
-  workflow_dispatch: {}   # "Run workflow" button for a manual test (always posts)
+  workflow_dispatch:      # "Run workflow" button (mode manual = always posts)
+    inputs:               # cron-job.org calls this at 8:30 AM IST with mode=auto,
+      mode:               # because GitHub's own schedule started ~8 hours late in Nov 2026
+        description: "manual = always post, auto = skip if already posted today"
+        type: choice
+        options: [manual, auto]
+        default: manual
 
 permissions:
   contents: write   # to save the images in the repo (Instagram needs a public URL)
@@ -35,7 +41,7 @@ jobs:
       - name: Already posted today?
         run: |
           TODAY=$(TZ=Asia/Kolkata date +%F)
-          if [ "${{ github.event_name }}" = "schedule" ] && [ -f "stories/$TODAY-story.jpg" ]; then
+          if { [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.mode }}" = "auto" ]; } && [ -f "stories/$TODAY-story.jpg" ]; then
             echo "Already posted today - skipping."
             echo "SKIP=1" >> "$GITHUB_ENV"
           fi
