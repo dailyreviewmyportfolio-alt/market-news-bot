@@ -7,7 +7,13 @@ on:
     # until exactly 7:00 PM IST before posting. The second run is only a backup.
     - cron: "0 11 * * 1-5"
     - cron: "45 11 * * 1-5"
-  workflow_dispatch: {}   # "Run workflow" button: posts right away (for a test)
+  workflow_dispatch:      # "Run workflow" button (mode now = post right away)
+    inputs:               # cron-job.org calls this at 6:50 PM IST with mode=wait,
+      mode:               # because GitHub's own schedule started ~10 hours late in Nov 2026
+        description: "now = post right away, wait = wait for 7:00 PM IST"
+        type: choice
+        options: [now, wait]
+        default: now
 
 permissions:
   contents: write   # only used by the fallback that briefly puts the video in the repo
@@ -28,7 +34,7 @@ jobs:
       IG_USER_ID: ${{ secrets.IG_USER_ID }}
     steps:
       - name: Did an earlier run already finish today?
-        if: github.event_name == 'schedule'
+        if: github.event_name == 'schedule' || inputs.mode == 'wait'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -52,4 +58,4 @@ jobs:
 
       - name: Wait for 7:00 PM IST, then post the Reel
         if: env.SKIP != '1'
-        run: python reel_upload.py ${{ github.event_name == 'schedule' && '--wait' || '--now' }}
+        run: python reel_upload.py ${{ (github.event_name == 'schedule' || inputs.mode == 'wait') && '--wait' || '--now' }}
